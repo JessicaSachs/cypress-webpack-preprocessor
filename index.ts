@@ -1,6 +1,7 @@
 import * as webpack from 'webpack'
 import * as Promise from 'bluebird'
 import * as events from 'events'
+import merge from 'webpack-merge'
 
 import { createDeferred } from './deferred'
 
@@ -37,6 +38,33 @@ const getDefaultWebpackOptions = (): webpack.Configuration => {
         },
       ],
     },
+  }
+}
+
+// We need to do this at times to support things like source maps
+const getCypressWebpackOverrides = (): webpack.Configuration => {
+  debug('load cypress overrides')
+  
+  return {
+    devtool: 'inline-source-map',
+    module: {
+      rules: [
+        test: /\.tsx?$/,
+        exclude: [/node_modules/],
+        use: [
+          {
+            loader: 'ts-loader',
+            options: {
+              compilerOptions: {
+                sourceMap: true,
+                inlineSourceMap: false,
+                // the other source map option
+              }
+            }
+          }
+        ]
+      ]
+    }
   }
 }
 
@@ -105,7 +133,12 @@ const preprocessor: WebpackPreprocessor = (options: PreprocessorOptions = {}): F
     }
 
     // user can override the default options
-    let webpackOptions: webpack.Configuration = options.webpackOptions || getDefaultWebpackOptions()
+    const userDefinedWebpackOptions: webpack.Configuration = options.webpackOptions || getDefaultWebpackOptions()
+    const cypressOverrides = getCypressWebpackOverrides()
+    let webpackOptions = merge.smartStrategy({
+      'module.rules': 'append'
+    })(userDefinedWebpackOptions, cypressOverrides)
+
     const watchOptions = options.watchOptions || {}
 
     debug('webpackOptions: %o', webpackOptions)
@@ -120,6 +153,7 @@ const preprocessor: WebpackPreprocessor = (options: PreprocessorOptions = {}): F
       : `${file.outputPath}.js`
 
     // we need to set entry and output
+    // TODO:  move this into webpack-merge
     webpackOptions = Object.assign(webpackOptions, {
       entry,
       output: {
@@ -127,10 +161,6 @@ const preprocessor: WebpackPreprocessor = (options: PreprocessorOptions = {}): F
         filename: path.basename(outputPath),
       },
     })
-
-    if (webpackOptions.devtool !== false) {
-      webpackOptions.devtool = 'inline-source-map'
-    }
 
     debug(`input: ${filePath}`)
     debug(`output: ${outputPath}`)
